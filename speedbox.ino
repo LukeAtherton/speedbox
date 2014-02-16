@@ -1,6 +1,4 @@
 #include <SoftwareSerial.h>
-
-//storage
 #include <EEPROM.h>
 
 //libraries for LCD
@@ -29,7 +27,6 @@ Adafruit_SSD1306 display(OLED_RESET);
 #endif
 
 // From antmessage.h
- 
 #define UCHAR unsigned char
  
 #define MESG_TX_SYNC                      ((UCHAR)0xA4)
@@ -64,7 +61,7 @@ Adafruit_SSD1306 display(OLED_RESET);
 #define ANT_RXD              7
 #define ANT_BAUD          4800 // Baud for ANT chip
 
-SoftwareSerial mySerial(ANT_RXD, ANT_TXD);
+SoftwareSerial antSerial(ANT_RXD, ANT_TXD);
  
 #define PACKETREADTIMEOUT  100
 #define MAXPACKETLEN        80
@@ -85,9 +82,7 @@ unsigned char antNetKey[] = ANT_NETWORKKEY;
 unsigned long cadenceEventTime = 0;
 unsigned long cadenceRevolutionCount = 0;
 unsigned long accumCadence = 0; //initialize at zero
- 
-int changeDirection = 0;
- 
+
 long packetCount = 0;
  
 enum
@@ -118,6 +113,10 @@ typedef enum { AUTO, UPPER, LOWER, DAMPEN, NONE } UIMode;
 
 UIMode currentMode = NONE;
 bool isActive = true;
+int changeDirection = 0;
+const float maxEditModeWaitTime = 5000; //time that cursor will display on screen without intput
+float lastInputTime = maxEditModeWaitTime;
+bool isEditModeActive = false;
  
 void errorHandler(int errIn)
 {
@@ -135,7 +134,7 @@ unsigned char writeByte(unsigned char out, unsigned char chksum)
   Serial.print(out, HEX);
   Serial.print(" ");
 #endif 
-  mySerial.write(out);
+  antSerial.write(out);
   chksum ^= out;
   return chksum;
 }
@@ -189,9 +188,9 @@ int readPacket(unsigned char *packet, int packetSize, int readTimeout)
  
   while (timeoutExit > millis())
   {
-    if (mySerial.available() > 0)
+    if (antSerial.available() > 0)
     {
-      byteIn = mySerial.read();
+      byteIn = antSerial.read();
       timeoutExit = millis() + readTimeout;
       if ((byteIn == MESG_TX_SYNC) && (rxBufCnt == 0))
       {
@@ -296,7 +295,7 @@ void printHeader(const char * title)
   Serial.print(title);
 }
 
-boolean checkInRange(float value)
+bool checkInRange(float value)
 {
   if(value > 0)
   {
@@ -305,8 +304,8 @@ boolean checkInRange(float value)
       //change down
       digitalWrite(DOWN_LED, HIGH);
       digitalWrite(UP_LED, LOW);
+
       changeDirection = -1;
-     
       cadenceReadingsTotal = 0;
      
       for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
@@ -314,15 +313,14 @@ boolean checkInRange(float value)
         readings[thisReading] = upperRangeValue -1;  
         cadenceReadingsTotal += upperRangeValue -1;
       }
-     
     } 
     else if(value > upperRangeValue)
     {
       //change up
       digitalWrite(UP_LED, HIGH);
       digitalWrite(DOWN_LED, LOW);
+
       changeDirection = 1;
-     
       cadenceReadingsTotal = 0;
      
       for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
@@ -339,56 +337,19 @@ boolean checkInRange(float value)
     }
   }
 }
- 
-void setup()
-{
-  Serial.begin(9600);
-  Serial.println("Starting...");
- 
-   //LCD Setup
-   // by default, we'll generate the high voltage from the 3.3v line internally! (neat!)
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // initialize with the I2C addr 0x3C (for the 128x32)
 
-  // initialize the pushbutton pins as input:
-  pinMode(BTN_DOWN, INPUT);     
-  pinMode(BTN_UP, INPUT);     
-  pinMode(BTN_MODE, INPUT); 
-  
-  pinMode(UP_LED, OUTPUT);
-  pinMode(DOWN_LED, OUTPUT);
-  
-  digitalWrite(UP_LED, LOW);
-  digitalWrite(DOWN_LED, LOW);
-  
-  lowerRangeValue = getSavedValue(0, 75);
-  upperRangeValue = getSavedValue(1, 85);
-  dampeningValue = getSavedValue(2, 10);
-  isActive = getSavedValue(3, false);
- 
-  pinMode(INPUT, ANT_CTS);
-  pinMode(ANT_RXD, INPUT);
-  pinMode(ANT_TXD, OUTPUT);
-  
-  // initialize all the readings to 0: 
-  cadenceReadingsTotal = 0;
-  for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
-  {
-    readings[thisReading] = lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);
-    cadenceReadingsTotal += lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);
-  }
- 
-  mySerial.begin(ANT_BAUD);
-   
-  Serial.println("Config Starting");
+void configureAntChip()
+{
+  Serial.println("Ant Chip Config Starting");
  
   // Reset
   sendPacket(MESG_SYSTEM_RESET_ID, 1, 0);
   delay(600);
    
   // Flush read buffer
-  while (mySerial.available() > 0)
+  while (antSerial.available() > 0)
   {
-    mySerial.read();
+    antSerial.read();
   }
    
   // Assign Channel
@@ -434,32 +395,77 @@ void setup()
   sendPacket(MESG_OPEN_CHANNEL_ID, 1, ANT_CHAN);
   if (checkReturn() == 0) errorHandler(errDefault);
  
-  Serial.println("Config Done");
+  Serial.println("Ant Chip Config Done");
 }
 
-void writeToDisplay()
+void resetCadenceReadings()
 {
- //LCD logic
-  display.clearDisplay();   // clears the screen and buffer
-  display.setRotation(1);
-  display.setTextSize(2);
-  display.setTextColor(WHITE);
-  display.setCursor(0,0);
+  cadenceReadingsTotal = 0;
+  for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
+  {
+    readings[thisReading] = lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);
+    cadenceReadingsTotal += lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);
+  }
+}
+ 
+void setup()
+{
+  Serial.begin(9600);
+  Serial.println("Starting...");
+ 
+  //LCD Setup
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // initialize with the I2C addr 0x3C (for the 128x32)
+
+  //init the pushbutton pins as input:
+  pinMode(BTN_DOWN, INPUT);     
+  pinMode(BTN_UP, INPUT);     
+  pinMode(BTN_MODE, INPUT); 
+
+  //init ant chip serial
+  pinMode(INPUT, ANT_CTS);
+  pinMode(ANT_RXD, INPUT);
+  pinMode(ANT_TXD, OUTPUT);
   
-  //show cadence
-  if(cadenceReadingsAverage < 100)
+  //init gear shift outputs
+  pinMode(UP_LED, OUTPUT);
+  pinMode(DOWN_LED, OUTPUT);
+  
+  digitalWrite(UP_LED, LOW);
+  digitalWrite(DOWN_LED, LOW);
+  
+  //load saved values from eeprom
+  Serial.println("Load settings from eeprom...");
+  lowerRangeValue = getSavedValue(0, 75);
+  upperRangeValue = getSavedValue(1, 85);
+  dampeningValue = getSavedValue(2, 10);
+  isActive = getSavedValue(3, false);
+  Serial.println("Settings loaded!");
+
+  //init all cadence readings to 0: 
+  resetCadenceReadings();
+ 
+  antSerial.begin(ANT_BAUD);
+   
+  configureAntChip();
+
+  Serial.println("Setup done!");
+}
+
+void writeAverageCadence(int avgCadence)
+{
+  if(avgCadence < 100)
   {
     display.setTextSize(1);
     display.print(" ");
     display.setTextSize(2);
   }
 
-  if(cadenceReadingsAverage < 10)
+  if(avgCadence < 10)
   {
     display.print(" ");
   }
 
-  if(cadenceReadingsAverage > 299)
+  if(avgCadence > 299)
   {
     display.setTextSize(1);
     display.print("^");
@@ -468,45 +474,48 @@ void writeToDisplay()
   }
   else
   {
-    if(cadenceReadingsAverage > 99)
+    if(avgCadence > 99)
     {
-      if(cadenceReadingsAverage < 199)
+      if(avgCadence < 199)
       {
         display.setTextSize(1);
         display.print("1");
         display.setTextSize(2);
-        if(cadenceReadingsAverage < 110)
+        if(avgCadence < 110)
         {
           display.print("0");
         }
-        display.print(cadenceReadingsAverage - 100);
+        display.print(avgCadence - 100);
       }
       else
       {
         display.setTextSize(1);
         display.print("2");
         display.setTextSize(2);
-        if(cadenceReadingsAverage < 210)
+        if(avgCadence < 210)
         {
           display.print("0");
         }
-        display.print(cadenceReadingsAverage - 200);
+        display.print(avgCadence - 200);
       }
     }
     else
     {
-      display.print(cadenceReadingsAverage);
+      display.print(avgCadence);
     }
   }
+  writeLineSpacer(1);
+}
 
-  display.setTextSize(1);
+void writeLineSpacer(int size)
+{
+  display.setTextSize(size);
   display.println();
+}
 
-  display.setTextSize(1);
-  display.print("auto");
-  display.write(UPDOWN_CHAR);
-
-  if(currentMode == AUTO)
+void writeCursorIfSelected(bool isSelected)
+{
+  if(isEditModeActive && isSelected)
   {
     display.write((uint8_t)16);
   }
@@ -514,8 +523,17 @@ void writeToDisplay()
   {
     display.print(" ");
   }
+}
 
-  if(isActive)
+void writeAutoSetting(bool isAuto, bool isSelected)
+{
+  display.setTextSize(1);
+  display.print("auto");
+  display.write(UPDOWN_CHAR);
+
+  writeCursorIfSelected(isSelected);
+
+  if(isAuto)
   {
     display.print(" on ");
   }
@@ -523,47 +541,44 @@ void writeToDisplay()
   {
     display.print("off ");
   }
-  display.println();
-  
-  if(currentMode == UPPER)
+  writeLineSpacer(1);
+}
+
+void writeNumericUIComponent(int value, bool isSelected)
+{
+  writeCursorIfSelected(isSelected);
+
+  display.setTextSize(2); //write padding
+
+  if(value < 10)
   {
-    display.write((uint8_t)16);
-  }
-  else
-  {
-    display.print(" ");
-  }
-  display.setTextSize(2);
-  
-  if(upperRangeValue < 10)
-  {
-    display.print(" ");
+    display.print(" "); //write padding
   }
 
-  display.print(upperRangeValue);
+  display.print(value);
+  writeLineSpacer(1);
+}
 
+void refreshUI()
+{
+  // clear the screen and buffer
+  display.clearDisplay();
+  display.setRotation(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0,0);
   display.setTextSize(1);
-  display.println();
 
-  if(currentMode == LOWER)
-  {
-    display.write((uint8_t)16);
-  }
-  else
-  {
-    display.print(" ");
-  }
-  display.setTextSize(2);
+  writeAverageCadence(cadenceReadingsAverage);
+  writeAutoSetting(isActive, currentMode == AUTO);
+  writeNumericUIComponent(upperRangeValue, currentMode == UPPER);
+  writeNumericUIComponent(lowerRangeValue, currentMode == LOWER);
+  writeNumericUIComponent(dampeningValue, currentMode == DAMPEN);
 
-  if(lowerRangeValue < 10)
-  {
-    display.print(" ");
-  }
+  display.display(); 
+}
 
-  display.print(lowerRangeValue);
-
-  display.setTextSize(1);
-  display.println();
+void writeSettingsToSerial()
+{
   Serial.print("dampening:");
   Serial.print(dampeningValue);
   Serial.print("- total:");
@@ -571,6 +586,7 @@ void writeToDisplay()
   Serial.print("- average:");
   Serial.print(cadenceReadingsTotal / dampeningValue);
   Serial.print("- ");
+
   for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
   {
     Serial.print(thisReading);
@@ -579,166 +595,138 @@ void writeToDisplay()
     Serial.print(" ");
   }
   Serial.println();
-  display.setTextSize(2);
+}
 
-  display.setTextSize(1);
-  if(currentMode == DAMPEN)
+void changeMode()
+{
+  switch(currentMode) 
   {
-    display.write((uint8_t)16);
+    case AUTO:
+      currentMode = UPPER;
+      break;
+    case UPPER:
+      currentMode = LOWER;
+      break;
+    case LOWER:
+      currentMode = DAMPEN;
+      break;
+    case DAMPEN:
+      currentMode = AUTO;
+      break;
+    default :
+      currentMode = AUTO;
+      break;
   }
-  else
+}
+
+void enterEditMode()
+{
+  lastInputTime = millis();
+  isEditModeActive = true;
+}
+
+void handleModeButton()
+{
+  if (digitalRead(BTN_MODE) == HIGH)
   {
-    display.print(" ");
+    if(isEditModeActive)
+    {
+      changeMode();
+    } 
+    else 
+    {
+      enterEditMode();
+    }
   }
-  display.setTextSize(2);
-
-  if(dampeningValue < 10)
-  {
-    display.print(" ");
-  }
-
-  display.print(dampeningValue);
-
-  display.display(); 
 }
 
 void checkForInput()
 {
-  if (digitalRead(BTN_MODE) == HIGH)
-  {  
-    switch( currentMode ) 
+  handleModeButton();
+  bool isUpButtonPressed = digitalRead(BTN_UP) == HIGH;
+  bool isDownButtonPressed = digitalRead(BTN_DOWN) == HIGH;
+  
+  if(isUpButtonPressed || isDownButtonPressed)
+  {
+    if(isEditModeActive)
     {
-      case AUTO:
-        currentMode = UPPER;
-        break;
+      switch(currentMode) 
+      {
+        case AUTO:
+          if(isActive)
+          {
+            isActive = false;
+            changeDirection = 0;
+            digitalWrite(UP_LED, LOW);
+            digitalWrite(DOWN_LED, LOW);
+          }
+          else
+          {
+            isActive = true;
+          }
+          EEPROM.write(3, isActive);
+          break;
 
-      case UPPER:
-        currentMode = LOWER;
-        break;
+        case LOWER:
+          if(isUpButtonPressed)
+          {
+            if(lowerRangeValue < 90 && lowerRangeValue < upperRangeValue - 5)
+              lowerRangeValue++;
+          }
+          else
+          {
+            if(lowerRangeValue > 1)
+              lowerRangeValue--;
+          }
+          EEPROM.write(0, lowerRangeValue);
+          break;
 
-      case LOWER:
-        currentMode = DAMPEN;
-        break;
-        
-      case DAMPEN:
-        currentMode = AUTO;
-        break;
+        case UPPER:
+          if(isUpButtonPressed)
+          {
+            if(upperRangeValue < 99)
+              upperRangeValue++;
+          }
+          else
+          {
+            if(upperRangeValue > 10 && lowerRangeValue < upperRangeValue - 5)
+              upperRangeValue--;
+          }
+          EEPROM.write(1, upperRangeValue);
+          break;
+          
+        case DAMPEN:
+          if(isUpButtonPressed)
+          {
+            if(dampeningValue < maxDampening)
+              dampeningValue++;
+          }
+          else
+          {
+            if(dampeningValue > 1)
+              dampeningValue--;
+          }
+          EEPROM.write(2, dampeningValue);
+          resetCadenceReadings();
+          break;
 
-      default :
-        currentMode = AUTO;
-        break;
+        default:
+          //something is wrong if we end up here...
+          break;
+      }
+
+      lastInputTime = millis();
+    }
+    else
+    {
+      currentMode = AUTO;
+      enterEditMode();
     }
   }
-  
-  if (digitalRead(BTN_UP) == HIGH) {  
-    switch( currentMode ) 
-    {
-      case AUTO:
-        if(isActive)
-        {
-          isActive = false;
-          digitalWrite(UP_LED, LOW);
-          digitalWrite(DOWN_LED, LOW);
-          changeDirection = 0;
-        }
-        else
-        {
-          isActive = true;
-        }
-        EEPROM.write(3, isActive);
-        break;
 
-      case LOWER:
-        if(lowerRangeValue < 90 && lowerRangeValue < upperRangeValue - 5)
-        {
-          lowerRangeValue++;
-          EEPROM.write(0, lowerRangeValue);
-        }
-        break;
-
-      case UPPER:
-        if(upperRangeValue < 99)
-        {
-          upperRangeValue++;
-          EEPROM.write(1, upperRangeValue);
-        }
-        break;
-        
-      case DAMPEN:
-        if(dampeningValue < maxDampening)
-        {
-          dampeningValue++;
-          EEPROM.write(2, dampeningValue);
-
-          cadenceReadingsTotal = 0;
-          // initialize dampening readings to mid range: 
-          for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
-          {
-            readings[thisReading] = lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;  
-            cadenceReadingsTotal += lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;
-          }
-        }
-        break;
-
-      default :
-        break;
-    }
-  }
-  
-  if (digitalRead(BTN_DOWN) == HIGH)
-  {    
-    switch(currentMode) 
-    {
-      case AUTO:
-        if(isActive)
-        {
-          isActive = false;
-          digitalWrite(UP_LED, LOW);
-          digitalWrite(DOWN_LED, LOW);
-          changeDirection = 0;
-        }
-        else
-        {
-          isActive = true;
-        }
-        EEPROM.write(3, isActive);
-        break;
-
-      case LOWER:
-        if(lowerRangeValue > 1)
-        {
-          lowerRangeValue--;
-          EEPROM.write(0, lowerRangeValue);
-        }
-        break;
-
-      case UPPER:
-        if(upperRangeValue > 10 && lowerRangeValue < upperRangeValue - 5)
-        {
-          upperRangeValue--;
-          EEPROM.write(1, upperRangeValue);
-        }
-        break;
-        
-      case DAMPEN:
-        if(dampeningValue > 1)
-        {
-          dampeningValue--;
-          EEPROM.write(2, dampeningValue);
-
-          cadenceReadingsTotal = 0;
-          // initialize dampening readings to mid range: 
-          for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
-          {
-            readings[thisReading] = lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;  
-            cadenceReadingsTotal += lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;
-          }
-        }
-        break;
-
-      default :
-        break;
-    }
+  if(lastInputTime < millis() - maxEditModeWaitTime)
+  {
+    isEditModeActive = false;
   }
 }
 
@@ -779,7 +767,7 @@ void handleAntMessages()
           
           if(cadenceEventTime != lastEventTime)
           {
-            Serial.print("Cadence Event Time: ");
+            Serial.print("Cadence Message Event Time: ");
             Serial.println(cadenceEventTime, DEC);
           }
           
@@ -806,7 +794,7 @@ void handleAntMessages()
 
               cadenceFraction = (unsigned short)((((finalCadence * 1024) % (unsigned long)deltaTime) * BSC_PRECISION) / deltaTime);
               finalCadence = (unsigned long)(finalCadence * (unsigned long)1024 / deltaTime); //1024/((1/1024)s) in the denominator --> RPM
-                                                                                    //...split up from s/min due to ULONG size limit
+                                                                                              //...split up from s/min due to ULONG size limit
               cadence = finalCadence;
 
               accumCadence += (unsigned long)((lastRevCount - cadenceRevolutionCount) & MAX_USHORT);
@@ -833,16 +821,13 @@ void handleAntMessages()
                 readings[readingsIndex] = lastCadence; 
                 // add the reading to the total:
                 cadenceReadingsTotal = cadenceReadingsTotal + readings[readingsIndex];   
-
                 // advance to the next position in the array:  
                 readingsIndex++;           
-
                 // if we're at the end of the array...
                 if (readingsIndex >= dampeningValue){
                   // ...wrap around to the beginning: 
                   readingsIndex = 0;
                 }          
-              
                 // calculate the average:
                 cadenceReadingsAverage = cadenceReadingsTotal / dampeningValue;  
                 
@@ -855,7 +840,7 @@ void handleAntMessages()
         break;
    
       default:
-        printHeader("MESG_ID_UKNOWN: ");
+        printHeader("MESG_ID_UNKNOWN: ");
         printPacket(packet);
         break;
     }
@@ -864,7 +849,8 @@ void handleAntMessages()
  
 void loop()
 {  
-  writeToDisplay();
+  refreshUI();
+  writeSettingsToSerial();
   checkForInput();
   handleAntMessages();
 }

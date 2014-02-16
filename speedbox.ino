@@ -117,7 +117,58 @@ int changeDirection = 0;
 const float maxEditModeWaitTime = 5000; //time that cursor will display on screen without intput
 float lastInputTime = maxEditModeWaitTime;
 bool isEditModeActive = false;
+
+void setup()
+{
+  Serial.begin(9600);
+  Serial.println("Starting...");
  
+  //LCD Setup
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // initialize with the I2C addr 0x3C (for the 128x32)
+
+  //init the pushbutton pins as input:
+  pinMode(BTN_DOWN, INPUT);     
+  pinMode(BTN_UP, INPUT);     
+  pinMode(BTN_MODE, INPUT); 
+
+  //init ant chip serial
+  pinMode(INPUT, ANT_CTS);
+  pinMode(ANT_RXD, INPUT);
+  pinMode(ANT_TXD, OUTPUT);
+  
+  //init gear shift outputs
+  pinMode(UP_LED, OUTPUT);
+  pinMode(DOWN_LED, OUTPUT);
+  
+  digitalWrite(UP_LED, LOW);
+  digitalWrite(DOWN_LED, LOW);
+  
+  //load saved values from eeprom
+  Serial.println("Load settings from eeprom...");
+  lowerRangeValue = getSavedValue(0, 75);
+  upperRangeValue = getSavedValue(1, 85);
+  dampeningValue = getSavedValue(2, 10);
+  isActive = getSavedValue(3, false);
+  Serial.println("Settings loaded!");
+
+  //init all cadence readings to 0: 
+  resetCadenceReadings();
+ 
+  antSerial.begin(ANT_BAUD);
+   
+  configureAntChip();
+
+  Serial.println("Setup done!");
+}
+ 
+void loop()
+{  
+  refreshUI();
+  writeSettingsToSerial();
+  checkForInput();
+  handleAntMessages();
+}
+
 void errorHandler(int errIn)
 {
 #ifdef DEBUG
@@ -406,49 +457,6 @@ void resetCadenceReadings()
     readings[thisReading] = lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);
     cadenceReadingsTotal += lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);
   }
-}
- 
-void setup()
-{
-  Serial.begin(9600);
-  Serial.println("Starting...");
- 
-  //LCD Setup
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // initialize with the I2C addr 0x3C (for the 128x32)
-
-  //init the pushbutton pins as input:
-  pinMode(BTN_DOWN, INPUT);     
-  pinMode(BTN_UP, INPUT);     
-  pinMode(BTN_MODE, INPUT); 
-
-  //init ant chip serial
-  pinMode(INPUT, ANT_CTS);
-  pinMode(ANT_RXD, INPUT);
-  pinMode(ANT_TXD, OUTPUT);
-  
-  //init gear shift outputs
-  pinMode(UP_LED, OUTPUT);
-  pinMode(DOWN_LED, OUTPUT);
-  
-  digitalWrite(UP_LED, LOW);
-  digitalWrite(DOWN_LED, LOW);
-  
-  //load saved values from eeprom
-  Serial.println("Load settings from eeprom...");
-  lowerRangeValue = getSavedValue(0, 75);
-  upperRangeValue = getSavedValue(1, 85);
-  dampeningValue = getSavedValue(2, 10);
-  isActive = getSavedValue(3, false);
-  Serial.println("Settings loaded!");
-
-  //init all cadence readings to 0: 
-  resetCadenceReadings();
- 
-  antSerial.begin(ANT_BAUD);
-   
-  configureAntChip();
-
-  Serial.println("Setup done!");
 }
 
 void writeAverageCadence(int avgCadence)
@@ -845,12 +853,4 @@ void handleAntMessages()
         break;
     }
   }
-}
- 
-void loop()
-{  
-  refreshUI();
-  writeSettingsToSerial();
-  checkForInput();
-  handleAntMessages();
 }

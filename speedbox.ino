@@ -146,10 +146,22 @@ void setup()
   //load saved values from eeprom
   Serial.println("Load settings from eeprom...");
   lowerRangeValue = getSavedValue(0, 75);
+  Serial.print("Lower Bound: ");
+  Serial.println(lowerRangeValue);
+
   upperRangeValue = getSavedValue(1, 85);
+  Serial.print("Upper Bound: ");
+  Serial.println(upperRangeValue);
+
   dampeningValue = getSavedValue(2, 10);
+  Serial.print("Dampening: ");
+  Serial.println(dampeningValue);
+
   isActive = getSavedValue(3, false);
-  Serial.println("Settings loaded!");
+  Serial.print("Auto Change Active: ");
+  Serial.println(isActive);
+
+  Serial.println("...Settings loaded!");
 
   //init all cadence readings to 0: 
   resetCadenceReadings();
@@ -158,13 +170,12 @@ void setup()
    
   configureAntChip();
 
-  Serial.println("Setup done!");
+  Serial.println("...Setup done!");
 }
  
 void loop()
 {  
   refreshUI();
-  writeSettingsToSerial();
   checkForInput();
   handleAntMessages();
 }
@@ -176,6 +187,18 @@ void errorHandler(int errIn)
   Serial.print("Error: ");
   Serial.println(errIn);
 #endif
+
+  display.clearDisplay();
+  display.setRotation(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0,0);
+  display.setTextSize(1);
+
+  display.print("Err: ");
+  display.write(errIn);
+
+  display.display(); 
+
   while (true) {};
 }
  
@@ -585,15 +608,15 @@ void refreshUI()
   display.display(); 
 }
 
-void writeSettingsToSerial()
+void writeStateToSerial()
 {
-  Serial.print("dampening:");
+  Serial.print("| dampening: ");
   Serial.print(dampeningValue);
-  Serial.print("- total:");
+  Serial.print(" | total: ");
   Serial.print(cadenceReadingsTotal);
-  Serial.print("- average:");
+  Serial.print(" | average: ");
   Serial.print(cadenceReadingsTotal / dampeningValue);
-  Serial.print("- ");
+  Serial.print(" | readings: ");
 
   for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
   {
@@ -602,7 +625,7 @@ void writeSettingsToSerial()
     Serial.print(readings[thisReading]);  
     Serial.print(" ");
   }
-  Serial.println();
+  Serial.println("|");
 }
 
 void changeMode()
@@ -730,6 +753,10 @@ void checkForInput()
       currentMode = AUTO;
       enterEditMode();
     }
+
+#ifdef DEBUG
+    writeStateToSerial();
+#endif
   }
 
   if(lastInputTime < millis() - maxEditModeWaitTime)
@@ -752,7 +779,8 @@ void handleAntMessages()
     msgSize = packet[1];
     msgData = &packet[3];
      
-    switch (msgId) {
+    switch (msgId) 
+    {
       case MESG_RESPONSE_EVENT_ID:
         printHeader("MESG_RESPONSE_EVENT_ID: ");
         printPacket(packet);
@@ -791,59 +819,63 @@ void handleAntMessages()
           unsigned long finalCadence;
           unsigned short deltaTime;
 
-           //rollover protection
-           deltaTime = (cadenceEventTime - lastEventTime) & MAX_USHORT;
+          //rollover protection
+          deltaTime = (cadenceEventTime - lastEventTime) & MAX_USHORT;
 
-           if (deltaTime > 0) //divide by zero
-           {
-              //rollover protection
-              finalCadence = (unsigned long)((cadenceRevolutionCount - lastRevCount) & MAX_USHORT);
-              finalCadence *= (unsigned long)(60); //60 s/min for numerator
+          if (deltaTime > 0) //divide by zero
+          {
+            //rollover protection
+            finalCadence = (unsigned long)((cadenceRevolutionCount - lastRevCount) & MAX_USHORT);
+            finalCadence *= (unsigned long)(60); //60 s/min for numerator
 
-              cadenceFraction = (unsigned short)((((finalCadence * 1024) % (unsigned long)deltaTime) * BSC_PRECISION) / deltaTime);
-              finalCadence = (unsigned long)(finalCadence * (unsigned long)1024 / deltaTime); //1024/((1/1024)s) in the denominator --> RPM
-                                                                                              //...split up from s/min due to ULONG size limit
-              cadence = finalCadence;
+            cadenceFraction = (unsigned short)((((finalCadence * 1024) % (unsigned long)deltaTime) * BSC_PRECISION) / deltaTime);
+            finalCadence = (unsigned long)(finalCadence * (unsigned long)1024 / deltaTime); //1024/((1/1024)s) in the denominator --> RPM
+                                                                                            //...split up from s/min due to ULONG size limit
+            cadence = finalCadence;
 
-              accumCadence += (unsigned long)((lastRevCount - cadenceRevolutionCount) & MAX_USHORT);
+            accumCadence += (unsigned long)((lastRevCount - cadenceRevolutionCount) & MAX_USHORT);
 
-              lastCadence = cadence;
-              lastEventTime = cadenceEventTime;
-              lastRevCount = cadenceRevolutionCount;
-              
-              Serial.print("Instantaneous cadence: ");
-              Serial.print(cadence);
-              Serial.print(".");
-              Serial.print(cadenceFraction);
-              Serial.println(" RPM");
-
-              Serial.print("Accumulated cadence: ");
-              Serial.println((unsigned short)((accumCadence >> 16) & MAX_USHORT));
-              Serial.println((unsigned short)(accumCadence & MAX_USHORT)); //display limited by 16-bit CPU
-              
-              if(cadence < 1000)
-              {
-                // subtract the last reading:
-                cadenceReadingsTotal = cadenceReadingsTotal - readings[readingsIndex];         
-                // read from the sensor:  
-                readings[readingsIndex] = lastCadence; 
-                // add the reading to the total:
-                cadenceReadingsTotal = cadenceReadingsTotal + readings[readingsIndex];   
-                // advance to the next position in the array:  
-                readingsIndex++;           
-                // if we're at the end of the array...
-                if (readingsIndex >= dampeningValue){
-                  // ...wrap around to the beginning: 
-                  readingsIndex = 0;
-                }          
-                // calculate the average:
-                cadenceReadingsAverage = cadenceReadingsTotal / dampeningValue;  
+            lastCadence = cadence;
+            lastEventTime = cadenceEventTime;             
+            lastRevCount = cadenceRevolutionCount;
                 
-                if(isActive){
-                  checkInRange(cadenceReadingsAverage);
-                }
+            Serial.print("Instantaneous cadence: ");
+            Serial.print(cadence);
+            Serial.print(".");
+            Serial.print(cadenceFraction);
+            Serial.println(" RPM");
+
+            Serial.print("Accumulated cadence: ");
+            Serial.println((unsigned short)((accumCadence >> 16) & MAX_USHORT));
+            Serial.println((unsigned short)(accumCadence & MAX_USHORT)); //display limited by 16-bit CPU
+                
+            if(cadence < 1000)
+            {
+              // subtract the last reading:
+              cadenceReadingsTotal = cadenceReadingsTotal - readings[readingsIndex];         
+              // read from the sensor:  
+              readings[readingsIndex] = lastCadence; 
+              // add the reading to the total:
+              cadenceReadingsTotal = cadenceReadingsTotal + readings[readingsIndex];   
+              // advance to the next position in the array:  
+              readingsIndex++;           
+              // if we're at the end of the array...
+              if (readingsIndex >= dampeningValue)
+              {
+                // ...wrap around to the beginning: 
+                readingsIndex = 0;
+              }          
+              // calculate the average:
+              cadenceReadingsAverage = cadenceReadingsTotal / dampeningValue;  
+                
+              if(isActive){
+                checkInRange(cadenceReadingsAverage);
               }
-           }
+#ifdef DEBUG
+              writeStateToSerial();
+#endif
+            }
+          }
         }
         break;
    

@@ -90,7 +90,8 @@ int changeDirection = 0;
  
 long packetCount = 0;
  
-enum {
+enum
+{
   errDefault,
   errPacketSizeExceeded,
   errChecksumError,
@@ -109,16 +110,17 @@ int dampeningValue = 1;
 const int maxDampening = 10;
 
 int readings[maxDampening];      // the readings from the analog input
-int readingsIndex = 0;                  // the index of the current reading
-int cadenceReadingsTotal = 0;                  // the running total
-int cadenceReadingsAverage = 0;                // the average
+int readingsIndex = 0;           // the index of the current reading
+int cadenceReadingsTotal = 0;    // the running total
+int cadenceReadingsAverage = 0;  // the average
 
-typedef enum {AUTO, UPPER, LOWER, DAMPEN, NONE} UIMode;
+typedef enum { AUTO, UPPER, LOWER, DAMPEN, NONE } UIMode;
 
 UIMode currentMode = NONE;
 bool isActive = true;
  
-void errorHandler(int errIn) {
+void errorHandler(int errIn)
+{
 #ifdef DEBUG
   Serial.println();
   Serial.print("Error: ");
@@ -127,7 +129,8 @@ void errorHandler(int errIn) {
   while (true) {};
 }
  
-unsigned char writeByte(unsigned char out, unsigned char chksum) { 
+unsigned char writeByte(unsigned char out, unsigned char chksum)
+{ 
 #ifdef DEBUG
   Serial.print(out, HEX);
   Serial.print(" ");
@@ -137,7 +140,8 @@ unsigned char writeByte(unsigned char out, unsigned char chksum) {
   return chksum;
 }
  
-void sendPacket(unsigned msgId, unsigned char argCnt, ...) {
+void sendPacket(unsigned msgId, unsigned char argCnt, ...)
+{
   va_list arg;
   va_start (arg, argCnt);
   unsigned char byteOut;
@@ -165,50 +169,70 @@ void sendPacket(unsigned msgId, unsigned char argCnt, ...) {
 #endif
 }
  
-void printPacket(unsigned char * packet) {
+void printPacket(unsigned char * packet)
+{
   int cnt = 0;
-  while (cnt < packet[1]+4) {
+  while (cnt < packet[1]+4)
+  {
     Serial.print(packet[cnt++], DEC);
     Serial.print  (" ");
   }
   Serial.println();
 }
  
-int readPacket(unsigned char *packet, int packetSize, int readTimeout) {
+int readPacket(unsigned char *packet, int packetSize, int readTimeout)
+{
   unsigned char byteIn;
   unsigned char chksum = 0;
    
   long timeoutExit = millis() + readTimeout;
  
-  while (timeoutExit > millis()) {
-    if (mySerial.available() > 0) {
+  while (timeoutExit > millis())
+  {
+    if (mySerial.available() > 0)
+    {
       byteIn = mySerial.read();
       timeoutExit = millis() + readTimeout;
-      if ((byteIn == MESG_TX_SYNC) && (rxBufCnt == 0)) {
+      if ((byteIn == MESG_TX_SYNC) && (rxBufCnt == 0))
+      {
         rxBuf[rxBufCnt++] = byteIn;
         chksum = byteIn;
-      } else if ((rxBufCnt == 0) && (byteIn != MESG_TX_SYNC)) {
+      } 
+      else if ((rxBufCnt == 0) && (byteIn != MESG_TX_SYNC))
+      {
         errorHandler(errMissingSync);
         return -1;
-      } else if (rxBufCnt == 1) {
+      }
+      else if (rxBufCnt == 1)
+      {
         rxBuf[rxBufCnt++] = byteIn;       // second byte will be size
         chksum ^= byteIn;
-      } else if (rxBufCnt < rxBuf[1]+3) { // read rest of data taking into account sync, size, and checksum that are each 1 byte
+      }
+      else if (rxBufCnt < rxBuf[1]+3) // read rest of data taking into account sync, size, and checksum that are each 1 byte
+      {
         rxBuf[rxBufCnt++] = byteIn;
         chksum ^= byteIn;
-      } else {
+      }
+      else
+      {
         rxBuf[rxBufCnt++] = byteIn;
-        if (rxBufCnt > packetSize) {
+        if (rxBufCnt > packetSize)
+        {
           errorHandler(errPacketSizeExceeded);
           return -1;
-        } else {
+        }
+        else
+        {
           memcpy(packet, &rxBuf, rxBufCnt); // should be a complete packet. copy data to packet variable, check checksum and return
           packetCount++;
-          if (chksum != packet[rxBufCnt-1]) {
+          if (chksum != packet[rxBufCnt-1])
+          {
             errorHandler(errChecksumError);
             rxBufCnt = 0;
             return -1;
-          } else {
+          }
+          else
+          {
             rxBufCnt = 0;
             return 1;
           }
@@ -219,7 +243,8 @@ int readPacket(unsigned char *packet, int packetSize, int readTimeout) {
   return 0;
 }
  
-int checkReturn() {
+int checkReturn()
+{
   byte packet[MAXPACKETLEN];
   int packetsRead;
  
@@ -238,7 +263,8 @@ int checkReturn() {
   return packetsRead;
 }
 
-int getSavedValue(int eepromPosition, int defaultValue){
+int getSavedValue(int eepromPosition, int defaultValue)
+{
   int savedValue = EEPROM.read(eepromPosition);
 
   if(savedValue == 255)
@@ -249,7 +275,8 @@ int getSavedValue(int eepromPosition, int defaultValue){
   return savedValue;
 }
 
-bool getSavedValue(int eepromPosition, bool defaultValue){
+bool getSavedValue(int eepromPosition, bool defaultValue)
+{
   bool savedValue = EEPROM.read(eepromPosition);
 
   if(savedValue == 255)
@@ -260,7 +287,8 @@ bool getSavedValue(int eepromPosition, bool defaultValue){
   return savedValue;
 }
 
-void printHeader(const char * title) {
+void printHeader(const char * title)
+{
   Serial.print(millis());
   Serial.print(" ");
   Serial.print(packetCount);
@@ -312,7 +340,8 @@ boolean checkInRange(float value)
   }
 }
  
-void setup() {
+void setup()
+{
   Serial.begin(9600);
   Serial.println("Starting...");
  
@@ -357,7 +386,8 @@ void setup() {
   delay(600);
    
   // Flush read buffer
-  while (mySerial.available() > 0) {
+  while (mySerial.available() > 0)
+  {
     mySerial.read();
   }
    
@@ -407,8 +437,8 @@ void setup() {
   Serial.println("Config Done");
 }
  
-void loop() {
-  
+void loop()
+{  
   //LCD logic
   display.clearDisplay();   // clears the screen and buffer
   display.setRotation(1);
@@ -417,42 +447,54 @@ void loop() {
   display.setCursor(0,0);
   
   //show cadence
-  if(cadenceReadingsAverage < 100){
+  if(cadenceReadingsAverage < 100)
+  {
     display.setTextSize(1);
     display.print(" ");
     display.setTextSize(2);
   }
 
-  if(cadenceReadingsAverage < 10){
+  if(cadenceReadingsAverage < 10)
+  {
     display.print(" ");
   }
 
-  if(cadenceReadingsAverage > 299){
+  if(cadenceReadingsAverage > 299)
+  {
     display.setTextSize(1);
     display.print("^");
     display.setTextSize(2);
     display.print("^^");
-  } else {
-
-    if(cadenceReadingsAverage > 99){
-      if(cadenceReadingsAverage < 199){
+  }
+  else
+  {
+    if(cadenceReadingsAverage > 99)
+    {
+      if(cadenceReadingsAverage < 199)
+      {
         display.setTextSize(1);
         display.print("1");
         display.setTextSize(2);
-        if(cadenceReadingsAverage < 110){
+        if(cadenceReadingsAverage < 110)
+        {
           display.print("0");
         }
         display.print(cadenceReadingsAverage - 100);
-      } else {
+      }
+      else
+      {
         display.setTextSize(1);
         display.print("2");
         display.setTextSize(2);
-        if(cadenceReadingsAverage < 210){
+        if(cadenceReadingsAverage < 210)
+        {
           display.print("0");
         }
         display.print(cadenceReadingsAverage - 200);
       }
-    }else{
+    }
+    else
+    {
       display.print(cadenceReadingsAverage);
     }
   }
@@ -464,45 +506,38 @@ void loop() {
   display.setTextSize(1);
   display.print("auto");
   display.write(UPDOWN_CHAR);
-  if(currentMode == AUTO){
+
+  if(currentMode == AUTO)
+  {
     display.write((uint8_t)16);
-  }else{
+  }
+  else
+  {
     display.print(" ");
   }
-  if(isActive){
+
+  if(isActive)
+  {
     display.print(" on ");
-  }else{
+  }
+  else
+  {
     display.print("off ");
   }
   display.println();
-  //display.setTextSize(2);
   
-  //show shift indicator
-  
-  /*if(changeDirection < 0){
-    display.write(DOWN_CHAR);
-    display.write(DOWN_CHAR);
-    
-  }else if(changeDirection > 0){
-     display.write(UP_CHAR);
-     display.write(UP_CHAR);
-     
-  } else {
-    display.print(" ");
-    display.print(" ");
-  }*/
-  
-  //show range
-
-  //display.setTextSize(1);
-  if(currentMode == UPPER){
+  if(currentMode == UPPER)
+  {
     display.write((uint8_t)16);
-  }else{
+  }
+  else
+  {
     display.print(" ");
   }
   display.setTextSize(2);
   
-  if(upperRangeValue < 10){
+  if(upperRangeValue < 10)
+  {
     display.print(" ");
   }
 
@@ -517,14 +552,18 @@ void loop() {
     display.setTextSize(2);
 
   display.setTextSize(1);
-  if(currentMode == LOWER){
+  if(currentMode == LOWER)
+  {
     display.write((uint8_t)16);
-  }else{
+  }
+  else
+  {
     display.print(" ");
   }
   display.setTextSize(2);
 
-  if(lowerRangeValue < 10){
+  if(lowerRangeValue < 10)
+  {
     display.print(" ");
   }
 
@@ -540,24 +579,28 @@ void loop() {
   Serial.print(cadenceReadingsTotal / dampeningValue);
   Serial.print("- ");
   for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
-              {
-                Serial.print(thisReading);
-                Serial.print(":");
-                Serial.print(readings[thisReading]);  
-                Serial.print(" ");
-              }
-              Serial.println();
+  {
+    Serial.print(thisReading);
+    Serial.print(":");
+    Serial.print(readings[thisReading]);  
+    Serial.print(" ");
+  }
+  Serial.println();
   display.setTextSize(2);
 
   display.setTextSize(1);
-  if(currentMode == DAMPEN){
+  if(currentMode == DAMPEN)
+  {
     display.write((uint8_t)16);
-  }else{
+  }
+  else
+  {
     display.print(" ");
   }
   display.setTextSize(2);
 
-  if(dampeningValue < 10){
+  if(dampeningValue < 10)
+  {
     display.print(" ");
   }
 
@@ -565,139 +608,151 @@ void loop() {
 
   display.display();
   
-  if (digitalRead(BTN_MODE) == HIGH) {  
+  if (digitalRead(BTN_MODE) == HIGH)
+  {  
     switch( currentMode ) 
     {
-        case AUTO:
-            currentMode = UPPER;
-            break;
+      case AUTO:
+        currentMode = UPPER;
+        break;
 
-        case UPPER:
-            currentMode = LOWER;
-            break;
+      case UPPER:
+        currentMode = LOWER;
+        break;
 
-        case LOWER:
-            currentMode = DAMPEN;
-            break;
+      case LOWER:
+        currentMode = DAMPEN;
+        break;
         
-        case DAMPEN:
-            currentMode = AUTO;
-            break;
+      case DAMPEN:
+        currentMode = AUTO;
+        break;
 
-        default :
-            currentMode = AUTO;
-            break;
+      default :
+        currentMode = AUTO;
+        break;
     }
   }
   
   if (digitalRead(BTN_UP) == HIGH) {  
     switch( currentMode ) 
     {
-        case AUTO:
-            if(isActive){
-              isActive = false;
-              digitalWrite(UP_LED, LOW);
-              digitalWrite(DOWN_LED, LOW);
-              changeDirection = 0;
-            }else{
-              isActive = true;
-            }
-            EEPROM.write(3, isActive);
-            break;
+      case AUTO:
+        if(isActive)
+        {
+          isActive = false;
+          digitalWrite(UP_LED, LOW);
+          digitalWrite(DOWN_LED, LOW);
+          changeDirection = 0;
+        }
+        else
+        {
+          isActive = true;
+        }
+        EEPROM.write(3, isActive);
+        break;
 
-        case LOWER:
-            if(lowerRangeValue < 90 && lowerRangeValue < upperRangeValue - 5){
-              lowerRangeValue++;
-              EEPROM.write(0, lowerRangeValue);
-            }
-            break;
+      case LOWER:
+        if(lowerRangeValue < 90 && lowerRangeValue < upperRangeValue - 5)
+        {
+          lowerRangeValue++;
+          EEPROM.write(0, lowerRangeValue);
+        }
+        break;
 
-        case UPPER:
-            if(upperRangeValue < 99){
-              upperRangeValue++;
-              EEPROM.write(1, upperRangeValue);
-            }
-            break;
+      case UPPER:
+        if(upperRangeValue < 99)
+        {
+          upperRangeValue++;
+          EEPROM.write(1, upperRangeValue);
+        }
+        break;
         
-        case DAMPEN:
-            if(dampeningValue < maxDampening){
-              dampeningValue++;
-              EEPROM.write(2, dampeningValue);
+      case DAMPEN:
+        if(dampeningValue < maxDampening)
+        {
+          dampeningValue++;
+          EEPROM.write(2, dampeningValue);
 
-              cadenceReadingsTotal = 0;
-              //readingsIndex = 0;
-              // initialize dampening readings to mid range: 
-              for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
-              {
-                readings[thisReading] = lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;  
-                cadenceReadingsTotal += lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;
-              }
-            }
-            break;
+          cadenceReadingsTotal = 0;
+          // initialize dampening readings to mid range: 
+          for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
+          {
+            readings[thisReading] = lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;  
+            cadenceReadingsTotal += lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;
+          }
+        }
+        break;
 
-        default :
-            break;
+      default :
+        break;
     }
   }
   
-  if (digitalRead(BTN_DOWN) == HIGH) {    
-    switch( currentMode ) 
+  if (digitalRead(BTN_DOWN) == HIGH)
+  {    
+    switch(currentMode) 
     {
-        case AUTO:
-            if(isActive){
-              isActive = false;
-              digitalWrite(UP_LED, LOW);
-              digitalWrite(DOWN_LED, LOW);
-              changeDirection = 0;
-            }else{
-              isActive = true;
-            }
-            EEPROM.write(3, isActive);
-            break;
+      case AUTO:
+        if(isActive)
+        {
+          isActive = false;
+          digitalWrite(UP_LED, LOW);
+          digitalWrite(DOWN_LED, LOW);
+          changeDirection = 0;
+        }
+        else
+        {
+          isActive = true;
+        }
+        EEPROM.write(3, isActive);
+        break;
 
-        case LOWER:
-            if(lowerRangeValue > 1){
-              lowerRangeValue--;
-              EEPROM.write(0, lowerRangeValue);
-            }
-            break;
+      case LOWER:
+        if(lowerRangeValue > 1)
+        {
+          lowerRangeValue--;
+          EEPROM.write(0, lowerRangeValue);
+        }
+        break;
 
-        case UPPER:
-            if(upperRangeValue > 10 && lowerRangeValue < upperRangeValue - 5){
-              upperRangeValue--;
-              EEPROM.write(1, upperRangeValue);
-            }
-            break;
+      case UPPER:
+        if(upperRangeValue > 10 && lowerRangeValue < upperRangeValue - 5)
+        {
+          upperRangeValue--;
+          EEPROM.write(1, upperRangeValue);
+        }
+        break;
         
-        case DAMPEN:
-            if(dampeningValue > 1){
-              dampeningValue--;
-              EEPROM.write(2, dampeningValue);
+      case DAMPEN:
+        if(dampeningValue > 1)
+        {
+          dampeningValue--;
+          EEPROM.write(2, dampeningValue);
 
-              cadenceReadingsTotal = 0;
-              //readingsIndex = 0;
-              // initialize dampening readings to mid range: 
-              for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
-              {
-                readings[thisReading] = lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;  
-                cadenceReadingsTotal += lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;
-              }
-            }
-            break;
+          cadenceReadingsTotal = 0;
+          // initialize dampening readings to mid range: 
+          for (int thisReading = 0; thisReading < dampeningValue; thisReading++)
+          {
+            readings[thisReading] = lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;  
+            cadenceReadingsTotal += lowerRangeValue + ((upperRangeValue - lowerRangeValue) / 2);;
+          }
+        }
+        break;
 
-        default :
-            break;
+      default :
+        break;
     }
   }
   
-  //===================================
   byte packet[MAXPACKETLEN];
   int packetsRead;
   unsigned char msgId, msgSize;
   unsigned char *msgData;
  
   packetsRead = readPacket(packet, MAXPACKETLEN, PACKETREADTIMEOUT);
-  if (packetsRead > 0) {
+  if (packetsRead > 0)
+  {
     msgId = packet[2];
     msgSize = packet[1];
     msgData = &packet[3];
@@ -717,12 +772,14 @@ void loop() {
         //printHeader("MESG_BROADCAST_DATA_ID: ");
         //printPacket(packet);
         
-        if(packet[1] == 9){
+        if(packet[1] == 9)
+        {
           //combine LSB and MSB to get value
           cadenceEventTime = (unsigned short)packet[4];
           cadenceEventTime |= (unsigned short)packet[5] << 8;
           
-          if(cadenceEventTime != lastEventTime){
+          if(cadenceEventTime != lastEventTime)
+          {
             Serial.print("Cadence Event Time: ");
             Serial.println(cadenceEventTime, DEC);
           }
@@ -730,7 +787,8 @@ void loop() {
           cadenceRevolutionCount = (unsigned short)packet[6];
           cadenceRevolutionCount |= (unsigned short)packet[7] << 8;
           
-          if(cadenceRevolutionCount != lastRevCount){
+          if(cadenceRevolutionCount != lastRevCount)
+          {
             Serial.print("Cadence Revolution Count: ");
             Serial.println(cadenceRevolutionCount, DEC);
           }
@@ -750,7 +808,7 @@ void loop() {
               cadenceFraction = (unsigned short)((((finalCadence * 1024) % (unsigned long)deltaTime) * BSC_PRECISION) / deltaTime);
               finalCadence = (unsigned long)(finalCadence * (unsigned long)1024 / deltaTime); //1024/((1/1024)s) in the denominator --> RPM
                                                                                     //...split up from s/min due to ULONG size limit
-              cadence   = finalCadence;
+              cadence = finalCadence;
 
               accumCadence += (unsigned long)((lastRevCount - cadenceRevolutionCount) & MAX_USHORT);
 
@@ -758,7 +816,6 @@ void loop() {
               lastEventTime = cadenceEventTime;
               lastRevCount = cadenceRevolutionCount;
               
-
               Serial.print("Instantaneous cadence: ");
               Serial.print(cadence);
               Serial.print(".");
@@ -794,10 +851,8 @@ void loop() {
                   checkInRange(cadenceReadingsAverage);
                 }
               }
-
            }
         }
-
         break;
    
       default:
@@ -807,4 +862,3 @@ void loop() {
     }
   }
 }
-

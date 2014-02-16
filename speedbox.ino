@@ -436,10 +436,10 @@ void setup()
  
   Serial.println("Config Done");
 }
- 
-void loop()
-{  
-  //LCD logic
+
+void writeToDisplay()
+{
+ //LCD logic
   display.clearDisplay();   // clears the screen and buffer
   display.setRotation(1);
   display.setTextSize(2);
@@ -501,7 +501,6 @@ void loop()
 
   display.setTextSize(1);
   display.println();
-  display.setTextSize(2);
 
   display.setTextSize(1);
   display.print("auto");
@@ -544,14 +543,8 @@ void loop()
   display.print(upperRangeValue);
 
   display.setTextSize(1);
-  display.print("   ");
-  //display.write(UPDOWN_CHAR);
-  display.print("  ");
-  //display.write(UPDOWN_CHAR);
-  //display.println();
-    display.setTextSize(2);
+  display.println();
 
-  display.setTextSize(1);
   if(currentMode == LOWER)
   {
     display.write((uint8_t)16);
@@ -606,8 +599,11 @@ void loop()
 
   display.print(dampeningValue);
 
-  display.display();
-  
+  display.display(); 
+}
+
+void checkForInput()
+{
   if (digitalRead(BTN_MODE) == HIGH)
   {  
     switch( currentMode ) 
@@ -744,7 +740,10 @@ void loop()
         break;
     }
   }
-  
+}
+
+void handleAntMessages()
+{
   byte packet[MAXPACKETLEN];
   int packetsRead;
   unsigned char msgId, msgSize;
@@ -861,4 +860,11 @@ void loop()
         break;
     }
   }
+}
+ 
+void loop()
+{  
+  writeToDisplay();
+  checkForInput();
+  handleAntMessages();
 }
